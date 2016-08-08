@@ -1,0 +1,106 @@
+---
+title: "Assignment"
+output: html_document
+---
+
+# Overview
+
+The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases.
+
+# Data Proprocessing
+
+1. Load packages
+```{r}
+library(ggplot2)
+library(caret)
+library(e1071)
+library(randomForest)
+library(gbm)
+library(rpart)
+library(survival)
+library(splines)
+library(plyr)
+library(doParallel)
+library(rpart)
+```
+
+
+2. Load data
+```{r}
+training<- read.csv("pml-training.csv", head=TRUE, sep=",", na.strings=c("NA","#DIV/0!","")) 
+testing <- read.csv("pml-testing.csv", head=TRUE, sep=",", na.strings=c("NA","#DIV/0!",""))
+```
+
+3. Get rid of columns with mostly Null values (the columns with 95% null values)
+```{r}
+GoodColumns <- !apply(training, 2, function(x) sum(is.na(x))/length(x) > 0.95)
+training <- training[, GoodColumns]
+```
+
+4. Get rid of columns with near zero variance
+```{r}
+SelectColumns2 <- nearZeroVar(training, saveMetrics = TRUE)
+training <- training[, SelectColumns2$nzv == FALSE]
+```
+
+5. Get rid of columns non-measurement data
+```{r}
+training <- training[, -c(1:5)]
+```
+
+6. Split the training data into training data and validation data
+```{r}
+set.seed(123456)
+inTrain <- createDataPartition(y=training$classe,
+                              p=0.6, list=FALSE)
+trainingT <- training[inTrain,]
+validating <- training[-inTrain,]
+```
+
+
+# Model Building
+1. Using 10-folder cross validation within training data
+```{r}
+folders <- trainControl(method = "cv", number=10)
+```
+
+2. Model Selection
+2.1 Baseline model:Decision Tree (with 10 folders cross-validation)
+it's always easier to start with simple models. So let's start with decision tree model
+```{r}
+mod_dt <- train(classe ~ ., data=trainingT, trControl = folders, method="rpart")
+mod_dt_val <- predict(mod_dt,validating)
+confusionMatrix(mod_dt_val, validating$classe)
+```
+Accuracy of decision tree model is 52%. So the model is completely useless.
+
+2.2 Ramdon Forest Model
+```{r}
+mod_rf <- train(classe ~ ., data=trainingT, trControl = folders, method="rf")
+mod_rf_val <- predict(mod_rf,validating)
+confusionMatrix(mod_rf_val, validating$classe)
+```
+Accuracy of random forest model is 99.7% for validation dataset. So it's a very good model and we decide to use ramdon forest to build the final model.
+
+3. Analysis of the best model
+3.1 Build random forest model again using combined training data and validation data
+```{r}
+mod_final <- train(classe ~ ., data=training, trControl = folders, method="rf")
+mod_final_eva <- predict(mod_final,training)
+confusionMatrix(mod_final_eva, training$classe)
+```
+It's common sense to build your final model using complete traning dataset to make a better model. 
+
+3.2 Visulize the importance of variables
+```{r}
+plot(mod_final)
+plot(mod_final$finalModel,main = "The Number of Trees VS. Error")
+plot(varImp(mod_final),main = "The Importance of Variables")
+```
+
+
+# Prediction for Test Data
+```{r}
+predict <- predict(mod_final, testing)
+predict
+```
